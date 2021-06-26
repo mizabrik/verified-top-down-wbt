@@ -23,10 +23,48 @@ Definition singleton x := node Leaf x Leaf.
 
 Definition weight t := 1 + size t.
 
-Definition Delta := 3.
-Definition Gamma := 2.
+
+(* В статьях, описывающих алгоритм, условие баланса записывается
+   как alpha <= w(L) / (w(L) + w(R)) <= 1 - alpha; на практике же,
+   эффективнее пользоваться эквивалентными неравенствами
+     w(L) <= Delta * w(R)),
+     w(R) <= Delta * w(L),
+   где Delta = (1 - alpha) / alpha. *)
+
+Structure BalanceBound : Set := mkBalanceBound {
+  nominator : int;
+  denominator : int;
+}.
+
+Definition Delta := {|
+  nominator := 3;
+  denominator := 1;
+|}.
+
+(* В ходе балансировки дерева применяются простые и двойные
+   вращения; выбор между ними делается в зависимости от того,
+   выполняется ли подобное условие баланса с коэффициентом;
+   например, для L-поворотов простое вращение выбирается при
+     w(LL)/(w(LL) + w(RR)) <= gamma,
+   где gamma = 1/(2 - alpha). Аналогичным образом, в реализации
+   мы приводим неравенство к виду 
+     w(LL) <= Gamma * w(RR),
+   где
+     Gamma := gamma/(1 - gamma) = 1/(1 - alpha).
+   Обращая определение Delta, получим alpha = 1/(1 + Delta),
+   и тогда если Delta = n/m, то
+     Gamma = (1 + Delta)/Delta = (m + n)/n. *)
 
 
+Definition Gamma := match Delta with
+  {| nominator := n; denominator := m |} =>
+    {| nominator := m + n; denominator := n |}
+end.
+
+Definition boundedBy c l r := match c with
+  {| nominator := n; denominator := m |} =>
+    m * l <=? n * r
+end.
 
 (* 1 + 1 + 2(1 + 1 + 3 + 5) *)
 Function add x t {measure cardinal t} :=
@@ -36,14 +74,14 @@ Function add x t {measure cardinal t} :=
     match X.compare x y with
     | Eq => t
     | Lt =>
-      if 1 + weight l <=? Delta * weight r
+      if boundedBy Delta (1 + weight l) (weight r)
       then node (add x l) y r
       else match l with
       | Node _ ll ly lr =>
         match X.compare x ly with
         | Eq => t
         | Lt => 
-          if weight lr <=? Gamma * weight ll
+          if boundedBy Gamma (weight lr) (weight ll)
           then node (add x ll) ly (node lr y r)
           else match lr with
           | Node _ lrl lry lrr =>
@@ -51,7 +89,7 @@ Function add x t {measure cardinal t} :=
           | Leaf => (* impossible *) node (add x l) y r
           end
         | Gt =>
-          if 1 + weight lr <=? Gamma * weight ll
+          if boundedBy Gamma (1 + weight lr) (weight ll)
           then node ll ly (add x (node lr y r))
           else match lr with
           | Node _ lrl lry lrr =>
@@ -66,14 +104,14 @@ Function add x t {measure cardinal t} :=
       | Leaf => (* impossible *) node (add x l) y r
       end
     | Gt =>
-      if 1 + weight r <=? Delta * weight l
+      if boundedBy Delta (1 + weight r) (weight l)
       then node l y (add x r)
       else match r with
       | Node _ rl ry rr =>
         match X.compare x ry with
         | Eq => t
         | Lt =>
-          if 1 + weight rl <=? Gamma * weight rr
+          if boundedBy Gamma (1 + weight rl) (weight rr)
           then node (add x (node l y rl)) ry rr
           else match rl with
           | Node _ rll rly rlr =>
@@ -85,7 +123,7 @@ Function add x t {measure cardinal t} :=
           | Leaf => (* impossible *) node l y (add x r)
           end
         | Gt =>
-          if weight rl <=? Gamma * weight rr
+          if boundedBy Gamma (weight rl) (weight rr)
           then node (node l y rl) ry (add x rr)
           else match rl with
           | Node _ rll rly rlr =>
@@ -313,7 +351,7 @@ Proof.
     simpl; rewrite IH; simpl; lia.
 Qed.
 
-Require Import ZArith.
+(* Require Import ZArith.
 
 Lemma leaf_is_bounded : forall coef tr,
   (sizedTree tr) -> (coef > 1)%I ->
@@ -342,7 +380,11 @@ Proof. unfold Delta; MI.i2z; lia. Qed.
 Lemma gamma_is_good : (Gamma > 1)%I.
 Proof. unfold Gamma; MI.i2z; lia. Qed.
 
-Local Hint Resolve delta_is_good gamma_is_good : core.
+Local Hint Resolve delta_is_good gamma_is_good : core. *)
+
+Lemma cardinal_node : forall s l x r,
+  cardinal (Node s l x r) = 1 + cardinal l + cardinal r.
+Proof. reflexivity. Qed.
 
 Theorem add_balanced : forall t x,
   sizedTree t -> balanced 3 t ->
@@ -357,7 +399,7 @@ Proof.
     [apply IHt0; assumption | assumption | ..].
     + destruct (add_cardinal l x) as [Hin | Hnin].
       * rewrite Hin.
-        unfold Delta, weight in *. MI.i2z.
+        simpl in e1. unfold weight in e1. MI.i2z.
         rewrite (size_spec _ H1) in e1.
         rewrite (size_spec _ H4) in e1.
         lia.
@@ -368,127 +410,47 @@ Proof.
       * rewrite Hnin; assumption.
   }
 
-  8: {
-    rewrite leaf_is_bounded in *; try easy.
-    enough (forall tr, I.leb (weight Leaf) (Gamma * weight tr) = true).
-    now rewrite H in *.
-    specialize (H ll). congruence.
-    MI.i2z. unfold weight, Gamma in e4. simpl in e4. lia.
-  - 
+  1: {
+    inversion Hsize; inversion Hbalance; subst.
+    inversion H1; inversion H9; subst.
+    constructor.
+    - auto.
+    - constructor; try assumption.
+      + rewrite cardinal_node in H11. lia.
+      + rewrite cardinal_node in H12.
+        simpl in e1. unfold weight in e1.
+        unfold size in e1 at 1. MI.i2z.
+        rewrite (size_spec _ H2) in e1.
+        rewrite (size_spec _ H6) in e1.
+        rewrite (size_spec _ H4) in e1.
+        lia.
+    - unfold node; rewrite cardinal_node.
+      destruct (add_cardinal ll x) as [Hadd | Hadd];
+      rewrite Hadd; lia.
+    - unfold node; rewrite cardinal_node.
+      destruct (add_cardinal ll x) as [Hadd | Hadd];
+      rewrite Hadd.
+      + 
+       simpl in e4. unfold weight in e4. MI.i2z.
+      rewrite (size_spec _ H2) in e4.
+      rewrite (size_spec _ H6) in e4. 
+
+        simpl in e1. unfold weight in e1.
+      unfold size in e1 at 1. MI.i2z.
+        rewrite (size_spec _ H2) in e1.
+        rewrite (size_spec _ H6) in e1.
+        rewrite (size_spec _ H4) in e1.
+        lia.
+      +
+       simpl in e4. unfold weight in e4. MI.i2z.
+      rewrite (size_spec _ H2) in e4.
+      rewrite (size_spec _ H6) in e4. 
+
+        simpl in e1. unfold weight in e1.
+      unfold size in e1 at 1. MI.i2z.
+        rewrite (size_spec _ H2) in e1.
+        rewrite (size_spec _ H6) in e1.
+        rewrite (size_spec _ H4) in e1.
+        lia.
+  } 
 Admitted.
-
-
-
-(* END OF MEANINGFUL PART *)
-
-End MakeRaw.
-
-Module WeightBalancedTree (X: OrderedType').
-
-
-Inductive Tree : Type :=
-  | Empty
-  | Node (size: Z) (left: Tree) (value: X.t) (right: Tree)
-.
-
-Fixpoint cardinal (tree: Tree) : nat :=
-  match tree with
-  | Empty => 0
-  | Node _ l _ r => 1 + size' l + size' r
-  end.
-
-Local Open Scope Z_scope.
-
-Definition size (tree: Tree) : Z :=
-  match tree with
-  | Empty => 0
-  | Node s _ _ _ => s
-  end.
-Definition weight (tree: Tree) : Z :=
-  match tree with
-  | Empty => 1
-  | Node s _ _ _ => 1 + s
-  end.
-
-Fixpoint IsOk (t: Tree) : Prop := match t with
-  | Empty => True
-  | Node s l x r => s = Z.from_nat (size' tree)
-                 /\ IsOk l
-            
-
-Definition singleton x := Node 1 Empty x Empty.
-Definition node l x r := Node (1 + size l + size r) l x r.
-
-Fixpoint member tree x := match tree with
-  | Empty => false
-  | Node _ l y r => match X.compare x y with
-    | Eq => true
-    | Lt => member l x
-    | Gt => member r x
-  end
-end.
-
-Inductive In (x: X.t) : Tree -> Prop :=
-  | InRoot : forall s l y r, X.eq x y -> In x (Node s l y r)
-  | InLeft : forall s l y r, In x l -> In x (Node s l y r)
-  | InRight : forall s l y r, In x r -> In x (Node s l y r)
-.
-
-
-(*
-Fixpoint deleteMin l x r := match l with
-  | Empty => (x, r)
-  | Node _ ll y rr =>
-    let (min, l') := deleteMin ll y rr in
-    (min, maybeRotateL l' x r)
-end.
-
-Fixpoint delete tree x := match tree with
-  | Empty => Empty
-  | Node _ l y r => match X.compare x y with
-    | Eq => match l, r with
-      | Empty, _ => r
-      | _, Empty => l
-      | _, Node _ rl z rr =>
-        let (y', r') := deleteMin rl z rr in
-        maybeRotateR l y' r'
-    end
-    | Lt => maybeRotateL (delete l x) y r
-    | Gt => maybeRotateR l y (delete r x)
-  end
-end.*)
-
-(* Recursive Extraction size insert. *)
-
-End WeightBalancedTree.
-
-Module ZSet := WeightBalancedTree(Z).
-
-Require Import Bool List String DecimalString.
-Import ListNotations.
-Open Scope Z_scope.
-Open Scope string_scope.
-
-Search (Z -> string).
-
-Fixpoint inorder t := match t with
-  | ZSet.Empty => "()"
-  | ZSet.Node _ l x r => fold_left append [
-    "("; inorder l; " "; NilZero.string_of_int (Z.to_int x); " "; inorder r; ")"
-  ] ""
-end.
-
-Definition testMember set := forallb (ZSet.member set).
-
-(*Fixpoint testDelete set xs := match xs with
-  | [] => true
-  | x :: xs' =>
-    let set' := ZSet.delete set x in
-    negb (ZSet.member set' x) && testMember set' xs' && testDelete set' xs'
-end.*)
-
-Definition test xs :=
-  let set := fold_left ZSet.insert xs ZSet.Empty in
-  testMember set xs (*&& testDelete set xs*).
-
-Compute test [4;2;42;1;15;22;5;16;48].
