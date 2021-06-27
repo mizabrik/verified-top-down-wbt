@@ -351,40 +351,38 @@ Proof.
     simpl; rewrite IH; simpl; lia.
 Qed.
 
-(* Require Import ZArith.
-
-Lemma leaf_is_bounded : forall coef tr,
-  (sizedTree tr) -> (coef > 1)%I ->
-  I.leb (weight Leaf) (coef * weight tr) = true.
-Proof.
-  intros.
-  assert (eq_1 : weight Leaf = 1%I). {
-    unfold weight, size; MI.i2z; reflexivity.
-  }
-  assert (weight_positive : (i2z (weight tr) > 0)%Z). {
-    unfold weight; MI.i2z; rewrite size_spec;
-    [ lia | assumption].
-  }
-  rewrite eq_1.
-  unfold weight; MI.i2z; repeat rewrite size_spec.
-  rewrite Z.mul_add_distr_l.
-  enough (Z.of_nat (cardinal tr) >= 0)%Z.
-  - lia.
-  - lia.
-  - assumption.
-Qed.
-
-Lemma delta_is_good : (Delta > 1)%I.
-Proof. unfold Delta; MI.i2z; lia. Qed.
-
-Lemma gamma_is_good : (Gamma > 1)%I.
-Proof. unfold Gamma; MI.i2z; lia. Qed.
-
-Local Hint Resolve delta_is_good gamma_is_good : core. *)
-
 Lemma cardinal_node : forall s l x r,
   cardinal (Node s l x r) = 1 + cardinal l + cardinal r.
 Proof. reflexivity. Qed.
+
+Lemma size_node : forall l x r,
+  (size (node l x r) = 1 + size l + size r)%I.
+Proof. reflexivity. Qed.
+
+Ltac reflect_boundedBy := lazymatch goal with
+  | H : boundedBy _ _ _ = _ |- _ =>
+    simpl in H;
+    MI.i2z;
+    rewrite ?size_spec in H;
+    [ reflect_boundedBy | assumption.. ]
+  | _ => idtac
+end.
+
+Hint Extern 8 => rewrite cardinal_node in * : core.
+
+Ltac rw_add_cardinal := match goal with
+  | |- context [cardinal (add ?x ?tr)] =>
+    let H := fresh in
+    destruct (add_cardinal tr x) as [H | H];
+    rewrite H
+end.
+
+Hint Extern 9 => rw_add_cardinal : core.
+
+Hint Constructors balanced : core.
+Hint Extern 10 => lia : core.
+
+Hint Resolve singleton_balanced : core.
 
 Theorem add_balanced : forall t x,
   sizedTree t -> balanced 3 t ->
@@ -392,65 +390,9 @@ Theorem add_balanced : forall t x,
 Proof.
   intros t x Hsize Hbalance.
   functional induction add x t;
-  auto using singleton_balanced.
-  1: {
-    inversion Hsize; inversion Hbalance.
-    unfold node; simple apply BalancedNode;
-    [apply IHt0; assumption | assumption | ..].
-    + destruct (add_cardinal l x) as [Hin | Hnin].
-      * rewrite Hin.
-        simpl in e1. unfold weight in e1. MI.i2z.
-        rewrite (size_spec _ H1) in e1.
-        rewrite (size_spec _ H4) in e1.
-        lia.
-        (* zify. rewrite Zle_is_le_bool. assumption. *)
-      * rewrite Hnin; assumption.
-    + destruct (add_cardinal l x) as [Hin | Hnin].
-      * rewrite Hin; lia.
-      * rewrite Hnin; assumption.
-  }
-
-  1: {
-    inversion Hsize; inversion Hbalance; subst.
-    inversion H1; inversion H9; subst.
-    constructor.
-    - auto.
-    - constructor; try assumption.
-      + rewrite cardinal_node in H11. lia.
-      + rewrite cardinal_node in H12.
-        simpl in e1. unfold weight in e1.
-        unfold size in e1 at 1. MI.i2z.
-        rewrite (size_spec _ H2) in e1.
-        rewrite (size_spec _ H6) in e1.
-        rewrite (size_spec _ H4) in e1.
-        lia.
-    - unfold node; rewrite cardinal_node.
-      destruct (add_cardinal ll x) as [Hadd | Hadd];
-      rewrite Hadd; lia.
-    - unfold node; rewrite cardinal_node.
-      destruct (add_cardinal ll x) as [Hadd | Hadd];
-      rewrite Hadd.
-      + 
-       simpl in e4. unfold weight in e4. MI.i2z.
-      rewrite (size_spec _ H2) in e4.
-      rewrite (size_spec _ H6) in e4. 
-
-        simpl in e1. unfold weight in e1.
-      unfold size in e1 at 1. MI.i2z.
-        rewrite (size_spec _ H2) in e1.
-        rewrite (size_spec _ H6) in e1.
-        rewrite (size_spec _ H4) in e1.
-        lia.
-      +
-       simpl in e4. unfold weight in e4. MI.i2z.
-      rewrite (size_spec _ H2) in e4.
-      rewrite (size_spec _ H6) in e4. 
-
-        simpl in e1. unfold weight in e1.
-      unfold size in e1 at 1. MI.i2z.
-        rewrite (size_spec _ H2) in e1.
-        rewrite (size_spec _ H6) in e1.
-        rewrite (size_spec _ H4) in e1.
-        lia.
-  } 
-Admitted.
+  unfold weight, node in *;
+  invtree sizedTree;
+  invtree balanced;
+  reflect_boundedBy;
+  auto 6.
+Qed.
