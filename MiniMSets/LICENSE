@@ -1,0 +1,12 @@
+--2021-06-28 15:37:40--  https://raw.githubusercontent.com/coq/coq/master/LICENSE
+Загружен сертификат CA «/etc/ssl/certs/ca-certificates.crt»
+Распознаётся raw.githubusercontent.com (raw.githubusercontent.com)… 185.199.109.133, 185.199.108.133, 185.199.111.133, ...
+Подключение к raw.githubusercontent.com (raw.githubusercontent.com)|185.199.109.133|:443... соединение установлено.
+HTTP-запрос отправлен. Ожидание ответа… 200 OK
+Длина: 24381 (24K) [text/plain]
+Сохранение в: «LICENSE»
+
+     0K .......... .......... ...                             100% 83,9M=0s
+
+2021-06-28 15:37:40 (83,9 MB/s) - «LICENSE» сохранён [24381/24381]
+

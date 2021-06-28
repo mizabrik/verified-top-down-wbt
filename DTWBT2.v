@@ -54,16 +54,12 @@ Definition weight t := 1 + size t.
 Definition Delta := 3.
 Definition Gamma := 2.
 
-(* Notation "[ e ]" := (exist _ e _ ). *)
-Notation "[ e ]" := e.
-
 Fixpoint cardinal t := match t with
   | Leaf => 0%nat
   | Node _ l _ r => (1 + cardinal l + cardinal r)%nat
 end.
 
-Print cardinal.
-
+Obligation Tactic := idtac.
 
 (* 1 + 1 + 2(1 + 1 + 3 + 5) *)
 Fixpoint add (x: X.t) (t : rawTree | validTree t) {measure (cardinal t)} : tree :=
@@ -135,6 +131,7 @@ Fixpoint add (x: X.t) (t : rawTree | validTree t) {measure (cardinal t)} : tree 
     end
   end.
 Next Obligation.
+  auto.
   inversion H; assumption.
 Qed.
 Next Obligation.

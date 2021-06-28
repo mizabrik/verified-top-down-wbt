@@ -1,16 +1,16 @@
-Require Import FunInd Recdef MSetInterface MSetGenTree BinInt Int Lia.
+Require Import MiniMSetInterface MiniMSetGenTree.
+Require Import FunInd Recdef BinInt Int Lia.
 
 Require Import ExtrHaskellBasic.
 Extraction Language Haskell.
 
-(* Module Ops (Import I:Int)(X:OrderedType) <: MSetInterface.Ops X. *)
-Module Ops (Import I:Int)(X:OrderedType) <: RawSets X.
+Module Ops (Import I:Int)(X:OrderedType) <: MiniMSetInterface.Ops X.
+Include MiniMSetGenTree.Ops X I.
+
 Local Open Scope Int_scope.
 Local Notation int := I.t.
 
 (* Use generic BST as a base; implements read-only operations. *)
-Include MSetGenTree.Ops X I.
-
 Definition size (t : tree) := 
    match t with
   | Leaf => 0
@@ -139,24 +139,16 @@ all: intros; simpl; lia. Defined.
 
 Definition remove (x: elt) (t: tree) := Leaf. 
 
-Definition filter (f: elt -> bool) t :=
-  fold (fun x t' => if f x then t else remove x t') t t.
-Definition partition f t :=
-  (filter f t, filter (fun b => negb (f b)) t).
-
-
-Definition union := fold add.
-Definition inter t1 t2 := filter (fun x => mem x t2) t1.
-Definition diff := fold remove.
-
 Definition t := tree.
-(*End Ops.
+
+End Ops.
+
 
 Module MakeRaw (Import I:Int)(X:OrderedType) <: RawSets X.
-Include Ops I X.*)
+Include Ops I X.
 
 Local Close Scope Z_scope.
-Include MSetGenTree.Props X I.
+Include MiniMSetGenTree.Props X I.
 
 Lemma singleton_spec : forall x y,
   InT y (singleton x) <-> X.eq y x.
@@ -166,11 +158,10 @@ Proof.
   - constructor; auto.
 Qed.
 
-Check add_ind.
-
 Import MX.
 
-  Hint Constructors InT.  Hint Constructors InT.
+Local Hint Constructors InT : core.
+Local Hint Constructors InT : core.
 Lemma gt_tree_l : forall x s l y r,
   gt_tree x (Node s l y r) -> gt_tree x l.
 Proof.
@@ -181,7 +172,7 @@ Lemma gt_tree_r : forall x s l y r,
 Proof.
   unfold gt_tree. intuition.
 Qed.
-Hint Resolve gt_tree_l gt_tree_r.
+Local Hint Resolve gt_tree_l gt_tree_r : core.
 
 Lemma lt_tree_l : forall x s l y r,
   lt_tree x (Node s l y r) -> lt_tree x l.
@@ -193,7 +184,7 @@ Lemma lt_tree_r : forall x s l y r,
 Proof.
   unfold lt_tree. intuition.
 Qed.
-Hint Resolve lt_tree_l lt_tree_r.
+Local Hint Resolve lt_tree_l lt_tree_r : core.
 
 Ltac ih_ok := match goal with
   | IH : Ok ?t' -> _ |- _ =>
@@ -204,13 +195,11 @@ Ltac ih_ok := match goal with
   | _ => idtac
 end.
 
-Print HintDb core.
-
 Lemma add_spec : forall t x y `{Ok t},
   InT y (add x t) <-> X.eq y x \/ InT y t.
 Proof.
-  Hint Constructors bst.
-  Local Hint Resolve MX.compare_eq MX.eq_trans.
+  Local Hint Constructors bst : core.
+  Local Hint Resolve MX.compare_eq MX.eq_trans : core.
   intros t x y H.
   functional induction add x t; ih_ok;
   match goal with
@@ -227,7 +216,7 @@ Qed.
 
 Lemma leaf_ok : Ok Leaf.
 Proof. constructor. Qed.
-Hint Resolve leaf_ok.
+Local Hint Resolve leaf_ok : core.
 
 Lemma lt_tree_node_iff : forall y s l x r,
   lt_tree y (Node s l x r) <->
@@ -247,11 +236,7 @@ Proof.
   - intuition; auto using gt_tree_node.
 Qed.
 
-Print Ok.
-
-(* Local Hint Resolve lt_tree_node_iff gt_tree_node_iff. *)
-
-Local Hint Resolve MX.eq_refl MX.lt_trans.
+Local Hint Resolve MX.eq_refl MX.lt_trans : core.
 
 Instance add_ok t x `(Ok t) : Ok (add x t).
 Proof.
@@ -321,8 +306,6 @@ Qed.
 Local Close Scope Int_scope.
 
 Local Open Scope nat_scope.
-Check  (_ <=? _).
-Search nat.
 
 Inductive balanced (coef: nat) : tree -> Prop :=
   | BalancedLeaf : balanced coef Leaf
@@ -368,7 +351,7 @@ Ltac reflect_boundedBy := lazymatch goal with
   | _ => idtac
 end.
 
-Hint Extern 8 => rewrite cardinal_node in * : core.
+Local Hint Extern 8 => rewrite cardinal_node in * : core.
 
 Ltac rw_add_cardinal := match goal with
   | |- context [cardinal (add ?x ?tr)] =>
@@ -377,12 +360,12 @@ Ltac rw_add_cardinal := match goal with
     rewrite H
 end.
 
-Hint Extern 9 => rw_add_cardinal : core.
+Local Hint Extern 9 => rw_add_cardinal : core.
 
-Hint Constructors balanced : core.
-Hint Extern 10 => lia : core.
+Local Hint Constructors balanced : core.
+Local Hint Extern 10 => lia : core.
 
-Hint Resolve singleton_balanced : core.
+Local Hint Resolve singleton_balanced : core.
 
 Theorem add_balanced : forall t x,
   sizedTree t -> balanced 3 t ->
@@ -396,3 +379,12 @@ Proof.
   reflect_boundedBy;
   auto 6.
 Qed.
+
+Instance singleton_ok x : Ok (singleton x).
+Proof. unfold singleton. auto with typeclass_instances. Qed.
+
+Lemma remove_spec : forall s x y `{Ok s},
+  In y (remove x s) <-> In y s /\ ~X.eq y x. Admitted.
+Instance remove_ok s x `(Ok s) : Ok (remove x s). Admitted.
+
+End MakeRaw.
