@@ -1,10 +1,7 @@
 Require Import MiniMSetInterface MiniMSetGenTree.
 Require Import FunInd Recdef BinInt Int Lia.
 
-Require Import ExtrHaskellBasic.
-Extraction Language Haskell.
-
-Module Ops (Import I:Int)(X:OrderedType) <: MiniMSetInterface.Ops X.
+Module Ops (Import I:Int) (X:OrderedType) <: MiniMSetInterface.Ops X.
 Include MiniMSetGenTree.Ops X I.
 
 Local Open Scope Int_scope.
@@ -14,7 +11,7 @@ Local Notation int := I.t.
 Definition size (t : tree) := 
    match t with
   | Leaf => 0
-  | Node s _ _ _ => s
+  | Node sz _ _ _ => sz
   end.
 
 Definition node l x r := Node (1 + size l + size r) l x r.
@@ -67,19 +64,19 @@ Definition boundedBy c l r := match c with
 end.
 
 (* 1 + 1 + 2(1 + 1 + 3 + 5) *)
-Function add x t {measure cardinal t} :=
-  match t with
+Function add x s {measure cardinal s} :=
+  match s with
   | Leaf => singleton x
   | Node _ l y r =>
     match X.compare x y with
-    | Eq => t
+    | Eq => s
     | Lt =>
       if boundedBy Delta (1 + weight l) (weight r)
       then node (add x l) y r
       else match l with
       | Node _ ll ly lr =>
         match X.compare x ly with
-        | Eq => t
+        | Eq => s
         | Lt => 
           if boundedBy Gamma (weight lr) (weight ll)
           then node (add x ll) ly (node lr y r)
@@ -94,7 +91,7 @@ Function add x t {measure cardinal t} :=
           else match lr with
           | Node _ lrl lry lrr =>
             match X.compare x lry with
-            | Eq => t
+            | Eq => s
             | Lt => node (add x (node ll ly lrl)) lry (node lrr y r)
             | Gt => node (node ll ly lrl) lry (add x (node lrr y r))
             end
@@ -109,14 +106,14 @@ Function add x t {measure cardinal t} :=
       else match r with
       | Node _ rl ry rr =>
         match X.compare x ry with
-        | Eq => t
+        | Eq => s
         | Lt =>
           if boundedBy Gamma (1 + weight rl) (weight rr)
           then node (add x (node l y rl)) ry rr
           else match rl with
           | Node _ rll rly rlr =>
             match X.compare x rly with
-            | Eq => t
+            | Eq => s
             | Lt => node (add x (node l y rll)) rly (node rlr ry rr)
             | Gt => node (node l y rll) rly (add x (node rlr ry rr))
             end
@@ -147,122 +144,111 @@ End Ops.
 Module MakeRaw (Import I:Int)(X:OrderedType) <: RawSets X.
 Include Ops I X.
 
-Local Close Scope Z_scope.
 Include MiniMSetGenTree.Props X I.
+
+Local Hint Constructors bst InT : core.
+Local Hint Resolve bst_Ok empty_ok : core.
 
 Lemma singleton_spec : forall x y,
   InT y (singleton x) <-> X.eq y x.
+Proof. unfold singleton, node; intuition_in. Qed.
+
+Instance singleton_ok x : Ok (singleton x).
+Proof. auto with typeclass_instances. Qed.
+
+Ltac reflect_compare :=
+  try rewrite MX.compare_eq_iff in *;
+  try rewrite MX.compare_lt_iff in *;
+  try rewrite MX.compare_gt_iff in *.
+
+Lemma add_spec' : forall s x y,
+  InT y (add x s) <-> X.eq y x \/ InT y s.
 Proof.
-  intros. split; intro H.
-  - inversion H; auto; inversion H1.
-  - constructor; auto.
+  intros; functional induction add x s;
+  [ rewrite singleton_spec | reflect_compare.. ];
+  unfold node in *;
+  intuition_in;
+  eauto using MX.eq_trans.
 Qed.
 
-Import MX.
+Lemma add_spec : forall s x y `{Ok s},
+  InT y (add x s) <-> X.eq y x \/ InT y s.
+Proof. intros; apply add_spec'. Qed.
 
-Local Hint Constructors InT : core.
-Local Hint Constructors InT : core.
-Lemma gt_tree_l : forall x s l y r,
-  gt_tree x (Node s l y r) -> gt_tree x l.
-Proof.
-  unfold gt_tree. intuition.
-Qed.
-Lemma gt_tree_r : forall x s l y r,
-  gt_tree x (Node s l y r) -> gt_tree x r.
-Proof.
-  unfold gt_tree. intuition.
-Qed.
-Local Hint Resolve gt_tree_l gt_tree_r : core.
+Local Hint Resolve ok lt_tree_node gt_tree_node : core.
 
-Lemma lt_tree_l : forall x s l y r,
-  lt_tree x (Node s l y r) -> lt_tree x l.
-Proof.
-  unfold lt_tree. intuition.
-Qed.
-Lemma lt_tree_r : forall x s l y r,
-  lt_tree x (Node s l y r) -> lt_tree x r.
-Proof.
-  unfold lt_tree. intuition.
-Qed.
-Local Hint Resolve lt_tree_l lt_tree_r : core.
-
-Ltac ih_ok := match goal with
-  | IH : Ok ?t' -> _ |- _ =>
-    let Hok := fresh
-    in assert (Hok : Ok t')
-           by (inv; unfold node, Ok in *; eauto);
-    specialize (IH Hok)
-  | _ => idtac
-end.
-
-Lemma add_spec : forall t x y `{Ok t},
-  InT y (add x t) <-> X.eq y x \/ InT y t.
-Proof.
-  Local Hint Constructors bst : core.
-  Local Hint Resolve MX.compare_eq MX.eq_trans : core.
-  intros t x y H.
-  functional induction add x t; ih_ok;
-  match goal with
-  | H : X.compare x ?z = Eq |- _ =>
-    intuition; apply MX.compare_eq in H; eauto using MX.eq_trans
-  | _ => idtac
-  end; [
-    rewrite singleton_spec; assert (~InT y Leaf); [
-      apply empty_spec | intuition
-    ] |
-    unfold node in *; intuition_in ..
-  ].
-Qed.
-
-Lemma leaf_ok : Ok Leaf.
-Proof. constructor. Qed.
-Local Hint Resolve leaf_ok : core.
-
-Lemma lt_tree_node_iff : forall y s l x r,
-  lt_tree y (Node s l x r) <->
+Lemma lt_tree_inv : forall y s l x r,
+  lt_tree y (Node s l x r) ->
   lt_tree y l /\ X.lt x y /\ lt_tree y r.
 Proof.
-  split.
-  - intuition; unfold lt_tree in *; eauto. 
-  - intuition; auto using lt_tree_node.
+  intuition; unfold lt_tree; auto.
 Qed.
 
-Lemma gt_tree_node_iff : forall y s l x r,
-  gt_tree y (Node s l x r) <->
+Lemma gt_tree_inv : forall y s l x r,
+  gt_tree y (Node s l x r) ->
   gt_tree y l /\ X.lt y x /\ gt_tree y r.
 Proof.
-  split.
-  - intuition; unfold gt_tree in *; eauto. 
-  - intuition; auto using gt_tree_node.
+  intuition; unfold gt_tree; auto.
 Qed.
 
-Local Hint Resolve MX.eq_refl MX.lt_trans : core.
+Ltac inv_xt_tree := try match goal with
+  | H : lt_tree _ (Node _ _ _ _) |- _ =>
+    apply lt_tree_inv in H;
+    decompose [and] H; clear H;
+    inv_xt_tree
+  | H : gt_tree _ (Node _ _ _ _) |- _ =>
+    apply gt_tree_inv in H;
+    decompose [and] H; clear H;
+    inv_xt_tree
+end.
+
+Ltac xt_tree_add :=
+  match goal with
+  | |- lt_tree _ (add _ _) => idtac
+  | |- gt_tree _ (add _ _) => idtac
+  end;
+  reflect_compare;
+  intro; (* unfolds head *)
+  rewrite add_spec;
+  [ intros [ | ]; [ | inv ] | ].
+
+Ltac xt_tree_trans := match goal with
+  | H1 : X.lt ?y ?x, H2 : lt_tree ?y ?s
+    |- lt_tree ?x ?s => apply lt_tree_trans with y
+  | H1 : X.lt ?x ?y, H2 : gt_tree ?y ?s
+    |- gt_tree ?x ?s => apply gt_tree_trans with y
+  end; assumption.
+
+Ltac X_trans := match goal with
+  | H1 : X.lt ?x ?y, H2 : X.lt ?y ?z
+    |- X.lt ?x ?y =>
+    apply MX.lt_trans with z; assumption
+end.
+
+Local Hint Extern 5 (X.lt _ _) => order.
+Local Hint Extern 5 => xt_tree_add.
+Local Hint Extern 6 => xt_tree_trans.
+
 
 Instance add_ok t x `(Ok t) : Ok (add x t).
 Proof.
-  functional induction add x t; ih_ok; intuition.
-  all: try solve [
-    inv; constructor; intuition;
-    (* intuition can not prove Ok Leaf. *) unfold Ok in *; auto;
-    unfold lt_tree, gt_tree in *;
-    intro; rewrite add_spec; intuition;
-    try rewrite MX.compare_lt_iff in *;
-    try rewrite MX.compare_gt_iff in *;
-    order
-  ].
-
-  all:
-    inv; unfold node; constructor; eauto;
-    match goal with
-    | |- context [add _ _] => intro; rewrite add_spec; intuition;
-      try rewrite MX.compare_lt_iff in *;
-      try rewrite MX.compare_gt_iff in *;
-      inv; eapply X.lt_compat; eauto
-    | _ => 
-      (apply lt_tree_node || apply gt_tree_node); auto;
-      (eapply lt_tree_trans || eapply gt_tree_trans); eauto
-    end.
+  functional induction add x t;
+  [ apply singleton_ok | constructor.. ];
+  unfold node in *;
+  inv; inv_xt_tree;
+  auto.
 Qed.
+
+Lemma remove_spec : forall s x y `{Ok s},
+  In y (remove x s) <-> In y s /\ ~X.eq y x. Admitted.
+Instance remove_ok s x `(Ok s) : Ok (remove x s). Admitted.
+
+End MakeRaw.
+
+
+Module BalanceProps (Import I:Int) (X:OrderedType).
+Include Ops I X.
+Include MiniMSetGenTree.Props X I.
 
 Inductive sizedTree : tree -> Prop :=
   | SizedLeaf : sizedTree Leaf
@@ -332,7 +318,7 @@ Proof.
   all:
     destruct IHt0 as [IH | IH]; [left | right];
     simpl; rewrite IH; simpl; lia.
-Qed.
+Qed. 
 
 Lemma cardinal_node : forall s l x r,
   cardinal (Node s l x r) = 1 + cardinal l + cardinal r.
@@ -380,11 +366,4 @@ Proof.
   auto 6.
 Qed.
 
-Instance singleton_ok x : Ok (singleton x).
-Proof. unfold singleton. auto with typeclass_instances. Qed.
-
-Lemma remove_spec : forall s x y `{Ok s},
-  In y (remove x s) <-> In y s /\ ~X.eq y x. Admitted.
-Instance remove_ok s x `(Ok s) : Ok (remove x s). Admitted.
-
-End MakeRaw.
+End BalanceProps.
