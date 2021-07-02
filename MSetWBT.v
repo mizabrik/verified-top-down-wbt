@@ -293,20 +293,32 @@ Local Close Scope Int_scope.
 
 Local Open Scope nat_scope.
 
-Inductive balanced (coef: nat) : tree -> Prop :=
-  | BalancedLeaf : balanced coef Leaf
+Inductive balanced (n m: nat) : tree -> Prop :=
+  | BalancedLeaf : balanced n m Leaf
   | BalancedNode : forall s l x r,
-      balanced coef l -> balanced coef r ->
-      (1 + cardinal l) <= coef * (1 + cardinal r) ->
-      (1 + cardinal r) <= coef * (1 + cardinal l) ->
-      balanced coef (Node s l x r)
+      balanced n m l -> balanced n m r ->
+      m * (1 + cardinal l) <= n * (1 + cardinal r) ->
+      m * (1 + cardinal r) <= n * (1 + cardinal l) ->
+      balanced n m (Node s l x r)
 .
 
 Local Hint Constructors balanced : core.
 
+
+Definition i2n i := Z.to_nat (i2z i).
+
+Definition delta_balanced := match Delta with
+  | {| nominator := n; denominator := m |}
+    => balanced (i2n n) (i2n m)
+end.
+
 Lemma singleton_balanced : forall x,
-  balanced 3 (singleton x).
-Proof. repeat constructor. Qed.
+  delta_balanced (singleton x).
+Proof.
+  repeat constructor;
+  unfold i2n; MI.i2z;
+  lia.
+Qed.
 
 Lemma add_cardinal : forall t x,
   cardinal (add x t) = 1 + cardinal t
@@ -318,7 +330,7 @@ Proof.
   all:
     destruct IHt0 as [IH | IH]; [left | right];
     simpl; rewrite IH; simpl; lia.
-Qed. 
+Qed.
 
 Lemma cardinal_node : forall s l x r,
   cardinal (Node s l x r) = 1 + cardinal l + cardinal r.
@@ -328,16 +340,14 @@ Lemma size_node : forall l x r,
   (size (node l x r) = 1 + size l + size r)%I.
 Proof. reflexivity. Qed.
 
-Ltac reflect_boundedBy := lazymatch goal with
+Ltac simpl_boundedBy := lazymatch goal with
   | H : boundedBy _ _ _ = _ |- _ =>
     simpl in H;
     MI.i2z;
     rewrite ?size_spec in H;
-    [ reflect_boundedBy | assumption.. ]
+    [ simpl_boundedBy | assumption.. ]
   | _ => idtac
 end.
-
-Local Hint Extern 8 => rewrite cardinal_node in * : core.
 
 Ltac rw_add_cardinal := match goal with
   | |- context [cardinal (add ?x ?tr)] =>
@@ -346,23 +356,25 @@ Ltac rw_add_cardinal := match goal with
     rewrite H
 end.
 
+Local Hint Extern 8 => rewrite cardinal_node in * : core.
 Local Hint Extern 9 => rw_add_cardinal : core.
-
 Local Hint Constructors balanced : core.
 Local Hint Extern 10 => lia : core.
 
 Local Hint Resolve singleton_balanced : core.
 
 Theorem add_balanced : forall t x,
-  sizedTree t -> balanced 3 t ->
-  balanced 3 (add x t).
+  sizedTree t -> delta_balanced t ->
+  delta_balanced (add x t).
 Proof.
   intros t x Hsize Hbalance.
   functional induction add x t;
+  try apply singleton_balanced;
   unfold weight, node in *;
-  invtree sizedTree;
+  unfold delta_balanced, Delta, i2n in *;
   invtree balanced;
-  reflect_boundedBy;
+  invtree sizedTree;
+  simpl_boundedBy;
   auto 6.
 Qed.
 
