@@ -134,6 +134,74 @@ Function add x s {measure cardinal s} :=
   end.
 all: intros; simpl; lia. Defined.
 
+Require Import Coq.Program.Wf.
+
+Lemma cardinal_node : forall s l x r,
+  (cardinal (Node s l x r) = 1 + cardinal l + cardinal r)%nat.
+Proof. reflexivity. Qed.
+
+(* Program Fixpoint remove_min l x r
+        { measure (cardinal l + cardinal r)%nat } : elt * tree :=
+  let simple := match l with
+    | Leaf => (x, r)
+    | Node _ ll lx lr => 
+      let (m, l') := remove_min ll lx lr
+      in (m, node l' x r)
+    end
+  in if boundedBy Delta (weight r) (weight l - 1)
+  then simple
+  else
+    match r with
+    | Leaf => simple
+    | Node _ rl rx rr =>
+      if boundedBy Gamma (weight rl) (weight rr)
+      then let (m, l') := remove_min l x rl
+           in (m, node l' rx rr)
+      else match rl with
+      | Leaf => simple
+      | Node _ rll rlx rlr =>
+        let (m, l') := remove_min l x rll
+        in (m, node l' rlx (node rlr rx rr))
+      end
+    end.
+Next Obligation.
+  rewrite cardinal_node. lia.
+Qed.
+Next Obligation.
+  rewrite cardinal_node. lia.
+Qed.
+Next Obligation.
+  rewrite ?cardinal_node. lia.
+Qed. *)
+
+Definition rotateLDouble l a rl c rr :=
+  match rl with
+  | Node _ rll b rlr => node (node l a rll) b (node  rlr c rr)
+  | Leaf => (* impossible *) node l a (node rl c rr)
+  end.
+
+Definition rotateL l a r :=
+  match r with
+  | Node _ rl b rr =>
+    if boundedBy Gamma (weight rl) (weight rr)
+    then node (node l a rl) b rr
+    else rotateLDouble l a rl b rr
+  | Leaf => (* impossible *) node l a r
+  end.
+
+Definition maybeRotateL l x r :=
+  if boundedBy Delta (weight r) (weight l)
+  then node l x r
+  else rotateL l x r.
+
+
+Function remove_min l x r := match l with
+  | Leaf => (x, r)
+  | Node _ ll y rr =>
+    let (min, l') := remove_min ll y rr in
+    (min, maybeRotateL l' x r)
+end.
+
 Definition remove (x: elt) (t: tree) := Leaf. 
 
 Definition t := tree.
@@ -148,6 +216,24 @@ Include MiniMSetGenTree.Props X I.
 
 Local Hint Constructors bst InT : core.
 Local Hint Resolve bst_Ok empty_ok : core.
+
+Require Import Program.Tactics.
+
+Lemma remove_min_spec : forall l x r y h,
+ InT y (Node h l x r) <->
+  X.eq y (fst (remove_min l x r)) \/ InT y (snd (remove_min l x r)).
+Proof.
+  intros. functional induction remove_min l x r.
+  - intuition_in.
+  - rewrite e0 in *; simpl in *.
+    intuition.
+    + 
+  - intuition_in.
+    + 
+  intros. program_simpl.
+  unfold remove_min.
+  unfold remove_min_func.
+  rewrite Wf.fix_sub_eq.
 
 Lemma singleton_spec : forall x y,
   InT y (singleton x) <-> X.eq y x.
@@ -165,9 +251,11 @@ Lemma add_spec' : forall s x y,
   InT y (add x s) <-> X.eq y x \/ InT y s.
 Proof.
   intros; functional induction add x s;
-  [ rewrite singleton_spec | reflect_compare.. ];
   unfold node in *;
+  reflect_compare;
+  try rewrite singleton_spec;
   intuition_in;
+  (* by now, only cases when x is discovered in tree are not solved *)
   eauto using MX.eq_trans.
 Qed.
 
@@ -203,14 +291,15 @@ Ltac inv_xt_tree := try match goal with
 end.
 
 Ltac xt_tree_add :=
-  match goal with
-  | |- lt_tree _ (add _ _) => idtac
-  | |- gt_tree _ (add _ _) => idtac
-  end;
-  reflect_compare;
+  (* works for goals |- xt_tree _ (add _ _) *)
   intro; (* unfolds head *)
   rewrite add_spec;
   [ intros [ | ]; [ | inv ] | ].
+
+Local Hint Extern 5 (lt_tree _ (add _ _)) => xt_tree_add.
+Local Hint Extern 5 (gt_tree _ (add _ _)) => xt_tree_add.
+
+Local Hint Extern 5 (X.lt _ _) => order.
 
 Ltac xt_tree_trans := match goal with
   | H1 : X.lt ?y ?x, H2 : lt_tree ?y ?s
@@ -219,22 +308,15 @@ Ltac xt_tree_trans := match goal with
     |- gt_tree ?x ?s => apply gt_tree_trans with y
   end; assumption.
 
-Ltac X_trans := match goal with
-  | H1 : X.lt ?x ?y, H2 : X.lt ?y ?z
-    |- X.lt ?x ?y =>
-    apply MX.lt_trans with z; assumption
-end.
-
-Local Hint Extern 5 (X.lt _ _) => order.
-Local Hint Extern 5 => xt_tree_add.
 Local Hint Extern 6 => xt_tree_trans.
-
 
 Instance add_ok t x `(Ok t) : Ok (add x t).
 Proof.
   functional induction add x t;
-  [ apply singleton_ok | constructor.. ];
   unfold node in *;
+  reflect_compare;
+  try apply singleton_ok;
+  constructor;
   inv; inv_xt_tree;
   auto.
 Qed.
