@@ -17,9 +17,10 @@ Definition size (t : tree) :=
 Definition node l x r := Node (1 + size l + size r) l x r.
 Definition singleton x := node Leaf x Leaf.
 
-
 Definition weight t := 1 + size t.
 
+Ltac unfold_helpers :=
+  unfold singleton, weight, node in *.
 
 (* В статьях, описывающих алгоритм, условие баланса записывается
    как alpha <= w(L) / (w(L) + w(R)) <= 1 - alpha; на практике же,
@@ -151,7 +152,7 @@ Local Hint Resolve bst_Ok empty_ok : core.
 
 Lemma singleton_spec : forall x y,
   InT y (singleton x) <-> X.eq y x.
-Proof. unfold singleton, node; intuition_in. Qed.
+Proof. unfold_helpers; intuition_in. Qed.
 
 Instance singleton_ok x : Ok (singleton x).
 Proof. auto with typeclass_instances. Qed.
@@ -166,7 +167,7 @@ Lemma add_spec' : forall s x y,
 Proof.
   intros; functional induction add x s;
   [ rewrite singleton_spec | reflect_compare.. ];
-  unfold node in *;
+  unfold_helpers;
   intuition_in;
   eauto using MX.eq_trans.
 Qed.
@@ -225,16 +226,16 @@ Ltac X_trans := match goal with
     apply MX.lt_trans with z; assumption
 end.
 
-Local Hint Extern 5 (X.lt _ _) => order.
-Local Hint Extern 5 => xt_tree_add.
-Local Hint Extern 6 => xt_tree_trans.
+Local Hint Extern 5 (X.lt _ _) => order : core.
+Local Hint Extern 5 => xt_tree_add : core.
+Local Hint Extern 6 => xt_tree_trans : core.
 
 
 Instance add_ok t x `(Ok t) : Ok (add x t).
 Proof.
   functional induction add x t;
   [ apply singleton_ok | constructor.. ];
-  unfold node in *;
+  unfold_helpers;
   inv; inv_xt_tree;
   auto.
 Qed.
@@ -274,19 +275,12 @@ Proof. repeat constructor. Qed.
 Local Hint Resolve singleton_size : core.
 Local Hint Constructors sizedTree : core.
 
-Ltac size_inversion :=
-  match goal with
-  | H : sizedTree (Node _ _ _ _) |- _ =>
-    clear_inversion H; size_inversion
-  | _ => idtac
-  end.
-
 Lemma add_sized : forall t x,
   sizedTree t -> sizedTree (add x t).
 Proof.
   intros t x H.
   functional induction add x t;
-  unfold node in *; size_inversion; auto.
+  unfold_helpers; invtree sizedTree; auto.
 Qed.
 
 Local Close Scope Int_scope.
@@ -312,6 +306,9 @@ Definition delta_balanced := match Delta with
     => balanced (i2n n) (i2n m)
 end.
 
+Ltac unfold_delta :=
+  unfold delta_balanced, Delta, i2n in *.
+
 Lemma singleton_balanced : forall x,
   delta_balanced (singleton x).
 Proof.
@@ -336,16 +333,12 @@ Lemma cardinal_node : forall s l x r,
   cardinal (Node s l x r) = 1 + cardinal l + cardinal r.
 Proof. reflexivity. Qed.
 
-Lemma size_node : forall l x r,
-  (size (node l x r) = 1 + size l + size r)%I.
-Proof. reflexivity. Qed.
-
-Ltac simpl_boundedBy := lazymatch goal with
+Ltac reflect_boundedBy := lazymatch goal with
   | H : boundedBy _ _ _ = _ |- _ =>
     simpl in H;
     MI.i2z;
     rewrite ?size_spec in H;
-    [ simpl_boundedBy | assumption.. ]
+    [ reflect_boundedBy | assumption.. ]
   | _ => idtac
 end.
 
@@ -356,12 +349,10 @@ Ltac rw_add_cardinal := match goal with
     rewrite H
 end.
 
+Local Hint Constructors balanced : core.
 Local Hint Extern 8 => rewrite cardinal_node in * : core.
 Local Hint Extern 9 => rw_add_cardinal : core.
-Local Hint Constructors balanced : core.
 Local Hint Extern 10 => lia : core.
-
-Local Hint Resolve singleton_balanced : core.
 
 Theorem add_balanced : forall t x,
   sizedTree t -> delta_balanced t ->
@@ -370,11 +361,9 @@ Proof.
   intros t x Hsize Hbalance.
   functional induction add x t;
   try apply singleton_balanced;
-  unfold weight, node in *;
-  unfold delta_balanced, Delta, i2n in *;
-  invtree balanced;
-  invtree sizedTree;
-  simpl_boundedBy;
+  unfold_helpers; unfold_delta;
+  invtree balanced; invtree sizedTree;
+  reflect_boundedBy;
   auto 6.
 Qed.
 
